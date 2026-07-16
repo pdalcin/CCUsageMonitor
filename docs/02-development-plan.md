@@ -1,8 +1,7 @@
 # Development Plan (phased, resumable)
 
 Each phase ends in a **runnable** state. Checkboxes are the source of truth for "where were we"
-if work is interrupted — also mirrored in `PROGRESS.md` with notes. Tick a box only when the
-"Done when" is actually observed, not just coded.
+if work is interrupted. Tick a box only when the "Done when" is actually observed, not just coded.
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 

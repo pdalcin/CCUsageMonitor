@@ -86,6 +86,5 @@ in this repo does not.
 - `docs/02-development-plan.md` — phased, resumable checklist
 - `docs/03-requirements.md` — deps & setup
 - `docs/04-data-sources.md` — verified data sources + the usage endpoint
-- `docs/PROGRESS.md` — live status log (read this first when resuming)
 </content>
 </invoke>

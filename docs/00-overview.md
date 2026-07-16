@@ -55,4 +55,4 @@ CCUsageMonitor/
 └── README.md
 ```
 
-See `02-development-plan.md` for the phased build and `PROGRESS.md` for live status.
+See `02-development-plan.md` for the phased build.
