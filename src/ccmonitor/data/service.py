@@ -62,6 +62,10 @@ class DataService(QObject):
     # enough that mashing the button can't get the user rate-limited.
     MANUAL_MIN_SECONDS = 20.0
 
+    # A session reset is a utilization drop of at least this many points (fraction).
+    # Within a window usage only climbs, so any real decrease means a new window.
+    RESET_UTIL_DROP = 0.10
+
     def __init__(self, config, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._config = config
@@ -141,18 +145,34 @@ class DataService(QObject):
         self.stateChanged.emit(self._state)
 
     def _detect_session_reset(self, session: Window) -> None:
-        """Fire ``sessionReset`` when the 5-hour window rolls over. The signal is
-        the ``resets_at`` timestamp jumping forward to a new window; we only fire
-        if the previous window had actually accrued some usage (no chime when idle)."""
+        """Fire ``sessionReset`` when the 5-hour window rolls over.
+
+        Two independent signals, either of which means a new window began:
+          1. ``resets_at`` jumps forward to a later time; and
+          2. utilization drops materially — within a window usage only climbs, so a
+             real decrease is a reset. This catches the common case where the reset
+             lands the session idle and ``resets_at`` comes back null/stale, so
+             signal 1 alone would miss it (the bug: no chime at the 0% reset).
+
+        We only chime if the window that just ended had actually accrued usage."""
         new_reset = session.resets_at_epoch
-        if new_reset is not None and self._last_session_reset is not None:
-            rolled_over = new_reset > self._last_session_reset + 60  # 60s jitter guard
-            if rolled_over and self._last_session_util > 0.0:
-                self.sessionReset.emit()
+        new_util = session.utilization
+        prev_reset = self._last_session_reset
+        prev_util = self._last_session_util
+
+        rolled_over = False
+        if new_reset is not None and prev_reset is not None and new_reset > prev_reset + 60:
+            rolled_over = True
+        if new_util is not None and prev_util - new_util >= self.RESET_UTIL_DROP:
+            rolled_over = True
+
+        if rolled_over and prev_util > 0.0:
+            self.sessionReset.emit()
+
         if new_reset is not None:
             self._last_session_reset = new_reset
-        if session.utilization is not None:
-            self._last_session_util = session.utilization
+        if new_util is not None:
+            self._last_session_util = new_util
 
     # -- manual refresh ------------------------------------------------------
     def refresh_now(self, force: bool = False) -> str:
