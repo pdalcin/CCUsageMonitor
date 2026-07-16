@@ -8,8 +8,9 @@ build/
 dist/
 *.spec
 
-# Internal development file — not for the public repo
+# Internal development files — not for the public repo
 docs/PROGRESS.md
+docs/02-development-plan.md
 
 # App runtime (user machine-specific)
 # config lives in %APPDATA%/CCUsageMonitor, not the repo

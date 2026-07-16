@@ -54,5 +54,3 @@ CCUsageMonitor/
 ├── run.ps1                   # convenience launcher
 └── README.md
 ```
-
-See `02-development-plan.md` for the phased build.

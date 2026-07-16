@@ -97,7 +97,6 @@ in this repo does not.
 
 - `docs/00-overview.md` — what & why, tech decisions, layout
 - `docs/01-architecture.md` — modules, threading, failure/degradation matrix
-- `docs/02-development-plan.md` — phased, resumable checklist
 - `docs/03-requirements.md` — deps & setup
 - `docs/04-data-sources.md` — verified data sources + the usage endpoint
 </content>
