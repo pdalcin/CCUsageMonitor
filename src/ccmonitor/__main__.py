@@ -30,6 +30,10 @@ def _build_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     act_refresh.triggered.connect(lambda: (window.show_and_raise(), window.refresh_now()))
     menu.addAction(act_refresh)
 
+    act_creds = QAction("Fix credentials…", menu)
+    act_creds.triggered.connect(window.open_credentials_dialog)
+    menu.addAction(act_creds)
+
     act_reset = QAction("Reset position", menu)
     act_reset.triggered.connect(lambda: (window.show_and_raise(), window.reset_position()))
     menu.addAction(act_reset)

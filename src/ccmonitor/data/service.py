@@ -110,7 +110,7 @@ class DataService(QObject):
     # -- api -----------------------------------------------------------------
     def _poll_api(self) -> None:
         self._last_api_attempt = time.time()
-        creds = credentials.load_credentials()
+        creds = credentials.load_credentials(self._config.credentials_path)
         self._state.token_present = creds is not None
         if creds is None:
             self._state.limits_status = "no_token"

@@ -37,6 +37,10 @@ class Config:
     # session across all projects under ~/.claude/projects).
     monitored_project_path: str | None = None
 
+    # Optional explicit path to Claude Code's .credentials.json, for installs
+    # where it isn't in a standard location. None => auto-search.
+    credentials_path: str | None = None
+
     # Poll intervals (seconds).
     local_poll_seconds: float = 2.0
     api_poll_seconds: float = 300.0

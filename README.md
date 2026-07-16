@@ -64,6 +64,20 @@ No console window; Python + Qt are bundled into the single exe.
 - **`⟳` Refresh** re-checks usage on demand (local instantly; the API is throttled to avoid the
   endpoint's rate limit).
 
+## Troubleshooting: limit gauges show "sign in to Claude Code"
+
+The overlay reads the OAuth token Claude Code stores locally. If it can't find one:
+
+- Make sure **Claude Code is installed and you've signed in** — open a terminal, run
+  `claude`, and log in if prompted.
+- The app searches `CLAUDE_CONFIG_DIR` (if you've set it), `~/.claude/.credentials.json`, and the
+  usual APPDATA locations. If your credentials live somewhere else, right-click the overlay →
+  **Fix credentials…** → **Locate file…** and point it straight at your `.credentials.json`. The
+  chosen path is remembered.
+- The **Fix credentials…** dialog (also on the tray menu) shows exactly where it looked and whether
+  your token is missing, expired, or valid. It pops up automatically the first time a credential
+  problem is detected.
+
 ## A note on the usage endpoint
 
 `/api/oauth/usage` is an undocumented endpoint that rate-limits aggressively (HTTP 429). The app

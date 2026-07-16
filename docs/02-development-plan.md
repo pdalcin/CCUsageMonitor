@@ -68,6 +68,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
       plays a `winsound` chime + status flash + tray balloon. Context-menu "Sound on reset" toggle,
       persisted (`config.sound_on_reset`). Verified detection headless (0,0,1,1,0 across baseline/
       mid-window/rollover/idle cases); live rollover can't be forced (happens ≤ every 5 h).
+- [x] Robust credential discovery: search `CLAUDE_CONFIG_DIR` + APPDATA/home fallbacks + a
+      user-set override (`config.credentials_path`), instead of the single hardcoded path. A
+      "Fix credentials…" helper dialog (overlay + tray menu, auto-shown on first no-token/expired)
+      explains how to sign in, shows where it looked, and offers "Locate file…" to point at a
+      non-standard `.credentials.json`. Verified: search order/dedupe, CLAUDE_CONFIG_DIR pickup,
+      bogus-override fallthrough, and signed-in/expired/not-found dialog states.
 - [ ] Lock / click-through toggle; opacity control.
 - [ ] Settings dialog: poll intervals, opacity, monitored project, manual-limit overrides.
 - [ ] Tooltips + graceful empty/error states (per failure matrix in `01-architecture.md`).

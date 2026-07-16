@@ -114,6 +114,9 @@ class OverlayWindow(QWidget):
         # normal freshness line for a few seconds after a manual refresh.
         self._transient_msg: str | None = None
         self._transient_until = 0.0
+        # Auto-show the credentials helper only once per problem (re-arm on OK).
+        self._creds_prompted = False
+        self._creds_dialog = None
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -284,6 +287,14 @@ class OverlayWindow(QWidget):
         if self._collapsed:
             self._fit_to(self.pill)
 
+        # First time we notice missing/expired credentials, offer the helper.
+        if state.limits_status in ("no_token", "unauthorized"):
+            if not self._creds_prompted:
+                self._creds_prompted = True
+                QTimer.singleShot(0, self.open_credentials_dialog)
+        elif state.limits_status == "ok":
+            self._creds_prompted = False  # re-arm for a future expiry
+
     def _effective_status(self, state) -> str:
         import time
         if self._transient_msg and time.time() < self._transient_until:
@@ -377,6 +388,23 @@ class OverlayWindow(QWidget):
         self._config.pos_x = self.x()
         self._config.pos_y = self.y()
         self._config.save()
+
+    # -- credentials helper -------------------------------------------------
+    def open_credentials_dialog(self) -> None:
+        """Show the 'find your Claude credentials' helper (once at a time)."""
+        if self._creds_dialog is not None:
+            self._creds_dialog.raise_()
+            self._creds_dialog.activateWindow()
+            return
+        from .credentials_dialog import CredentialsDialog
+
+        self.show_and_raise()
+        dlg = CredentialsDialog(self._config, self._service.refresh_now, parent=self)
+        self._creds_dialog = dlg
+        try:
+            dlg.exec()
+        finally:
+            self._creds_dialog = None
 
     # -- session reset notification -----------------------------------------
     def _on_session_reset(self) -> None:
@@ -480,6 +508,9 @@ class OverlayWindow(QWidget):
         act_sound.setChecked(self._config.sound_on_reset)
         act_sound.toggled.connect(self._set_sound_on_reset)
         menu.addAction(act_sound)
+        act_creds = QAction("Fix credentials…", self)
+        act_creds.triggered.connect(self.open_credentials_dialog)
+        menu.addAction(act_creds)
         act_hide = QAction("Hide to tray", self)
         act_hide.triggered.connect(self._on_close_clicked)
         menu.addAction(act_hide)
