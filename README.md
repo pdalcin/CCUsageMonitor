@@ -78,6 +78,16 @@ The overlay reads the OAuth token Claude Code stores locally. If it can't find o
   your token is missing, expired, or valid. It pops up automatically the first time a credential
   problem is detected.
 
+### OMP (oh-my-pi) fallback — experimental
+
+If no Claude Code login is found, the app makes a **last-resort, read-only** attempt to recover a
+Claude OAuth token from [OMP / oh-my-pi](https://omp.sh)'s local SQLite store
+(`~/.omp/agent/agent.db`, or under `PI_CONFIG_DIR`). If it works, you'll get a one-time warning that
+you're running on OMP credentials with a **limited experience**: the session tokens/cost/model panel
+stays empty (OMP doesn't write Claude Code session logs) and limits come from OMP's token. Signing in
+with Claude Code is recommended. This path was developed without OMP on hand and **needs validation
+by an OMP user** — please report back if it does or doesn't work for you.
+
 ## A note on the usage endpoint
 
 `/api/oauth/usage` is an undocumented endpoint that rate-limits aggressively (HTTP 429). The app

@@ -117,6 +117,8 @@ class OverlayWindow(QWidget):
         # Auto-show the credentials helper only once per problem (re-arm on OK).
         self._creds_prompted = False
         self._creds_dialog = None
+        # Warn once if we ended up authenticating through the OMP fallback.
+        self._omp_warned = False
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -294,6 +296,10 @@ class OverlayWindow(QWidget):
                 QTimer.singleShot(0, self.open_credentials_dialog)
         elif state.limits_status == "ok":
             self._creds_prompted = False  # re-arm for a future expiry
+            # If the working token came from the OMP fallback, warn once.
+            if getattr(state, "credentials_via_omp", False) and not self._omp_warned:
+                self._omp_warned = True
+                QTimer.singleShot(0, self._warn_omp)
 
     def _effective_status(self, state) -> str:
         import time
@@ -405,6 +411,32 @@ class OverlayWindow(QWidget):
             dlg.exec()
         finally:
             self._creds_dialog = None
+
+    def _warn_omp(self) -> None:
+        """One-time heads-up that we're authenticating via OMP, not Claude Code."""
+        from PySide6.QtWidgets import QMessageBox
+
+        self.show_and_raise()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Signed in via OMP")
+        box.setText("Using OMP (oh-my-pi) credentials as a fallback")
+        box.setInformativeText(
+            "No Claude Code login was found, so the overlay is using the Claude OAuth "
+            "token stored by OMP (oh-my-pi).\n\n"
+            "Your experience will be limited:\n"
+            "•  The session tokens / cost / model / time panel stays empty — OMP does not "
+            "write Claude Code's session logs.\n"
+            "•  The usage limits are read using OMP's token and may not exactly match your "
+            "Claude Code plan view.\n\n"
+            "For the full experience, sign in with Claude Code (run  claude  in a terminal), "
+            "then reopen the overlay."
+        )
+        fix = box.addButton("Fix credentials…", QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Ok)
+        box.exec()
+        if box.clickedButton() is fix:
+            self.open_credentials_dialog()
 
     # -- session reset notification -----------------------------------------
     def _on_session_reset(self) -> None:

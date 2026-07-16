@@ -14,9 +14,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+# Anthropic OAuth *access* tokens are self-identifying, so we can recognise one
+# in an unknown store without knowing its schema. (oat01 = access; ort01 =
+# refresh — we deliberately only accept access tokens.)
+_OAT_RE = re.compile(r"sk-ant-oat01-[A-Za-z0-9_\-]+")
 
 # Kept for backwards-compat / documentation: the default, most common location.
 CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
@@ -29,6 +36,7 @@ class Credentials:
     subscription_type: str | None
     rate_limit_tier: str | None
     source_path: Path | None = None  # where we actually found it (for diagnostics)
+    is_omp: bool = False             # sourced from OMP/oh-my-pi, not Claude Code
 
     @property
     def is_expired(self) -> bool:
@@ -101,10 +109,140 @@ def _try_load(path: Path) -> Credentials | None:
 
 
 def load_credentials(override: str | None = None) -> Credentials | None:
-    """Return the first valid credentials found across the search paths, or None.
-    Never raises."""
+    """Return the first valid credentials found, or None. Never raises.
+
+    Tries Claude Code's own credential files first; only if none is found does it
+    fall back to reading a token out of OMP/oh-my-pi's store (see
+    ``load_omp_credentials``) as a last resort."""
     for path in credentials_search_paths(override):
         creds = _try_load(path)
+        if creds is not None:
+            return creds
+    return load_omp_credentials()
+
+
+# ---------------------------------------------------------------------------
+# OMP / oh-my-pi fallback  (https://omp.sh)
+#
+# OMP is a *separate* coding agent that stores every provider credential in a
+# local SQLite DB (~/.omp/agent/agent.db, or under $PI_CONFIG_DIR) rather than
+# Claude Code's ~/.claude/.credentials.json. The exact schema is versioned and
+# undocumented, so instead of assuming table/column names we open the DB
+# READ-ONLY and scan every cell for an Anthropic OAuth access token. If the
+# payload is encrypted (no recognisable token), we simply find nothing.
+#
+# NOTE: developed without OMP installed on the dev machine — the token-shape and
+# read path are best-effort and want validation by a real OMP user.
+# ---------------------------------------------------------------------------
+def omp_db_paths() -> list[Path]:
+    """Candidate locations of OMP's auth SQLite database."""
+    paths: list[Path] = []
+    cfg = os.environ.get("PI_CONFIG_DIR")
+    if cfg:
+        base = Path(cfg).expanduser()
+        paths += [base / "agent" / "agent.db", base / "agent.db"]
+    home = Path.home()
+    paths += [home / ".omp" / "agent" / "agent.db", home / ".omp" / "agent.db"]
+    return _dedupe(paths)
+
+
+def _first_value(obj, keys: set[str]):
+    """Breadth-first search a parsed-JSON structure for the first value under any
+    of ``keys`` (used to recover expiry/subscription that sit near the token)."""
+    stack = [obj]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            for k, v in cur.items():
+                if k in keys and isinstance(v, (int, str)):
+                    return v
+                stack.append(v)
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return None
+
+
+def _extract_token_fields(text: str) -> dict | None:
+    m = _OAT_RE.search(text)
+    if not m:
+        return None
+    token = m.group(0)
+    expires_at_ms = None
+    subscription_type = None
+    try:  # if the cell is JSON, opportunistically recover metadata
+        obj = json.loads(text)
+        exp = _first_value(obj, {"expiresAt", "expires_at", "expiresAtMs"})
+        if isinstance(exp, int):
+            expires_at_ms = exp
+        subscription_type = _first_value(obj, {"subscriptionType", "subscription_type"})
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return {
+        "token": token,
+        "expires_at_ms": expires_at_ms,
+        "subscription_type": subscription_type,
+    }
+
+
+def _scan_sqlite_for_token(con: sqlite3.Connection) -> dict | None:
+    cur = con.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = [r[0] for r in cur.fetchall()]
+    for table in tables:
+        try:
+            cur.execute(f'SELECT * FROM "{table}"')
+            rows = cur.fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            for cell in row:
+                if isinstance(cell, bytes):
+                    cell = cell.decode("utf-8", "ignore")
+                if not isinstance(cell, str) or "sk-ant-oat01-" not in cell:
+                    continue
+                fields = _extract_token_fields(cell)
+                if fields:
+                    return fields
+    return None
+
+
+def _read_omp_db(db: Path) -> Credentials | None:
+    # Open strictly read-only. Try a plain RO open first (respects locks); if the
+    # DB is locked by a running OMP, retry as immutable to bypass locking. We only
+    # ever read — never write, never migrate.
+    for suffix in ("?mode=ro", "?mode=ro&immutable=1"):
+        try:
+            con = sqlite3.connect(db.as_uri() + suffix, uri=True, timeout=1.0)
+        except sqlite3.Error:
+            continue
+        try:
+            fields = _scan_sqlite_for_token(con)
+        except sqlite3.Error:
+            fields = None
+        finally:
+            con.close()
+        if fields:
+            return Credentials(
+                access_token=fields["token"],
+                expires_at_ms=fields["expires_at_ms"],
+                subscription_type=fields["subscription_type"],
+                rate_limit_tier=None,
+                source_path=db,
+                is_omp=True,
+            )
+    return None
+
+
+def load_omp_credentials() -> Credentials | None:
+    """Best-effort: recover a Claude OAuth access token from OMP's SQLite store.
+    Read-only; returns None if OMP isn't present or no token can be recovered."""
+    for db in omp_db_paths():
+        try:
+            if not db.exists():
+                continue
+        except OSError:
+            continue
+        creds = _read_omp_db(db)
         if creds is not None:
             return creds
     return None

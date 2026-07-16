@@ -96,7 +96,16 @@ class CredentialsDialog(QDialog):
     # -- state-aware content ------------------------------------------------
     def _refresh_view(self, note: str = "") -> None:
         creds = credentials.load_credentials(self._config.credentials_path)
-        if creds is not None and not creds.is_expired:
+        if creds is not None and not creds.is_expired and creds.is_omp:
+            self._headline.setText("Signed in via OMP (fallback)")
+            self._body.setText(
+                "No Claude Code login was found, so the overlay is using the Claude token "
+                f"stored by <b>OMP (oh-my-pi)</b> at:<br><code>{creds.source_path}</code><br><br>"
+                "This is a best-effort fallback — the session tokens/cost/model panel won't "
+                "populate, and limits come from OMP's token. For the full experience, sign in "
+                "with Claude Code (run <code>claude</code> in a terminal), then click <b>Retry</b>."
+            )
+        elif creds is not None and not creds.is_expired:
             plan = creds.subscription_type or "your Claude account"
             self._headline.setText("You're signed in ✓")
             self._body.setText(

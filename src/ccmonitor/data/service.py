@@ -27,6 +27,7 @@ class AppState:
     subscription: str | None = None
     token_present: bool = False
     token_expired: bool = False
+    credentials_via_omp: bool = False           # token came from OMP fallback, not Claude Code
     refreshing: bool = False                    # a manual API refresh is in flight
 
     @property
@@ -112,6 +113,7 @@ class DataService(QObject):
         self._last_api_attempt = time.time()
         creds = credentials.load_credentials(self._config.credentials_path)
         self._state.token_present = creds is not None
+        self._state.credentials_via_omp = bool(creds is not None and creds.is_omp)
         if creds is None:
             self._state.limits_status = "no_token"
             self._state.refreshing = False
