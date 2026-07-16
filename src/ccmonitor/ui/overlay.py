@@ -540,6 +540,9 @@ class OverlayWindow(QWidget):
         act_sound.setChecked(self._config.sound_on_reset)
         act_sound.toggled.connect(self._set_sound_on_reset)
         menu.addAction(act_sound)
+        act_test = QAction("Test alarm sound", self)
+        act_test.triggered.connect(self.test_alarm)
+        menu.addAction(act_test)
         act_creds = QAction("Fix credentials…", self)
         act_creds.triggered.connect(self.open_credentials_dialog)
         menu.addAction(act_creds)
@@ -555,6 +558,13 @@ class OverlayWindow(QWidget):
     def _set_sound_on_reset(self, enabled: bool) -> None:
         self._config.sound_on_reset = enabled
         self._config.save()
+
+    def test_alarm(self) -> None:
+        """Play the reset chime on demand so the user can confirm it's audible.
+        Plays regardless of the 'Sound on reset' toggle — it's an explicit test."""
+        from .. import notify
+        notify.play_reset_sound()
+        self._flash_status("testing alarm sound ♪")
 
     def _quit(self) -> None:
         self._quitting = True

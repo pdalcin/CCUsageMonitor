@@ -34,6 +34,10 @@ def _build_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     act_creds.triggered.connect(window.open_credentials_dialog)
     menu.addAction(act_creds)
 
+    act_test = QAction("Test alarm sound", menu)
+    act_test.triggered.connect(window.test_alarm)
+    menu.addAction(act_test)
+
     act_reset = QAction("Reset position", menu)
     act_reset.triggered.connect(lambda: (window.show_and_raise(), window.reset_position()))
     menu.addAction(act_reset)
