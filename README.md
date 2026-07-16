@@ -74,9 +74,15 @@ The overlay reads the OAuth token Claude Code stores locally. If it can't find o
   usual APPDATA locations. If your credentials live somewhere else, right-click the overlay →
   **Fix credentials…** → **Locate file…** and point it straight at your `.credentials.json`. The
   chosen path is remembered.
-- The **Fix credentials…** dialog (also on the tray menu) shows exactly where it looked and whether
-  your token is missing, expired, or valid. It pops up automatically the first time a credential
-  problem is detected.
+- **A credential can exist but still be rejected** by the server — e.g. it was revoked, or your last
+  Claude Code sign-in is too old to refresh. The app judges validity by the **actual usage-API
+  response**, not just whether a file exists, so in that case it shows "limits: re-auth in Claude
+  Code" and the helper says *"Your saved Claude login is no longer valid."* Fix it by running
+  `claude` to sign in again, then click **Re-check now**.
+- The **Fix credentials…** dialog (also on the tray menu) shows exactly where it looked and the live
+  state — signed-in-and-verified, rejected/expired, or found-but-unverified. It pops up automatically
+  the first time a credential problem is detected, and **Re-check now** re-validates against Anthropic
+  on demand.
 
 ### OMP (oh-my-pi) fallback — experimental
 

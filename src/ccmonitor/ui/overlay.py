@@ -405,7 +405,7 @@ class OverlayWindow(QWidget):
         from .credentials_dialog import CredentialsDialog
 
         self.show_and_raise()
-        dlg = CredentialsDialog(self._config, self._service.refresh_now, parent=self)
+        dlg = CredentialsDialog(self._config, self._service, parent=self)
         self._creds_dialog = dlg
         try:
             dlg.exec()

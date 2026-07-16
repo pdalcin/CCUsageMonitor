@@ -155,15 +155,17 @@ class DataService(QObject):
             self._last_session_util = session.utilization
 
     # -- manual refresh ------------------------------------------------------
-    def refresh_now(self) -> str:
+    def refresh_now(self, force: bool = False) -> str:
         """User-initiated refresh. Always refreshes the cheap local data now; also
-        hits the rate-limited usage API unless we polled it very recently. Returns a
+        hits the rate-limited usage API unless we polled it very recently. ``force``
+        skips that throttle — used for credential re-validation after a fresh login,
+        where an immediate API hit is exactly what the user is asking for. Returns a
         short human-readable note describing what happened (for a transient status)."""
         self._poll_local()
         if not self.api_enabled:
             return "refreshed"
         since = time.time() - self._last_api_attempt
-        if since < self.MANUAL_MIN_SECONDS:
+        if not force and since < self.MANUAL_MIN_SECONDS:
             wait = int(self.MANUAL_MIN_SECONDS - since) + 1
             return f"just updated — retry in {wait}s"
         self._state.refreshing = True
