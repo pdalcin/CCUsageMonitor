@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# App runtime (user machine-specific)
+# config lives in %APPDATA%/CCUsageMonitor, not the repo
+
+# Personal Claude Code settings (machine-specific permission allowlist)
+.claude/settings.local.json
+
+# Never commit credentials, if one is ever copied into the tree by mistake
+.credentials.json
+**/config.json
+
+# Scratch
+scratch_*.png
+scratch/
