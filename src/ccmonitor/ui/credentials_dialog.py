@@ -84,12 +84,19 @@ class CredentialsDialog(QDialog):
         b_locate.clicked.connect(self._locate)
         b_get = QPushButton("Get Claude Code")
         b_get.clicked.connect(lambda: QDesktopServices.openUrl(CLAUDE_CODE_URL))
+        b_shell = QPushButton("Open PowerShell")
+        b_shell.setToolTip(
+            "Open a PowerShell window in the app folder so you can run "
+            "`claude` and sign in"
+        )
+        b_shell.clicked.connect(self._open_shell)
         b_retry = QPushButton("Re-check now")
         b_retry.clicked.connect(self._retry)
         b_close = QPushButton("Close")
         b_close.clicked.connect(self.reject)
         btns.addWidget(b_locate)
         btns.addWidget(b_get)
+        btns.addWidget(b_shell)
         btns.addStretch(1)
         btns.addWidget(b_retry)
         btns.addWidget(b_close)
@@ -220,6 +227,23 @@ class CredentialsDialog(QDialog):
         self._config.save()
         self._note_text = ""
         self._service.refresh_now(force=True)  # validate the newly chosen file against the API
+        self._refresh_view()
+
+    def _open_shell(self) -> None:
+        # Open a PowerShell (PS7 if available) in the app folder so the user can
+        # run `claude` to sign in, then come back and Re-check.
+        from .. import shell
+
+        if shell.open_powershell(shell.app_folder()):
+            self._note_text = (
+                "Opened a PowerShell window. Run  claude  to sign in, then click "
+                "Re-check now."
+            )
+        else:
+            self._note_text = (
+                "Couldn't find PowerShell on this system. Open a terminal manually "
+                "and run  claude  to sign in."
+            )
         self._refresh_view()
 
     def _retry(self) -> None:

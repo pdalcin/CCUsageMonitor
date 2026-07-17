@@ -52,6 +52,11 @@ class Config:
     # Play a chime when the 5-hour session window rolls over (usage resets).
     sound_on_reset: bool = True
 
+    # Recently-active Claude project folders (with a CLAUDE.md), most-recent
+    # first, populated by an explicit "scan" from the Open PowerShell menu.
+    # Persisted so the menu stays filled across restarts.
+    recent_project_paths: list = field(default_factory=list)
+
     # Free-form extension bucket so we can add keys without migration pain.
     extra: dict = field(default_factory=dict)
 

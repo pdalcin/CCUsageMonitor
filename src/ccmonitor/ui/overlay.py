@@ -546,6 +546,7 @@ class OverlayWindow(QWidget):
         act_creds = QAction("Fix credentials…", self)
         act_creds.triggered.connect(self.open_credentials_dialog)
         menu.addAction(act_creds)
+        menu.addMenu(self._build_powershell_menu(menu))
         act_hide = QAction("Hide to tray", self)
         act_hide.triggered.connect(self._on_close_clicked)
         menu.addAction(act_hide)
@@ -554,6 +555,62 @@ class OverlayWindow(QWidget):
         act_quit.triggered.connect(self._quit)
         menu.addAction(act_quit)
         menu.exec(self.mapToGlobal(pos))
+
+    # -- open-PowerShell submenu --------------------------------------------
+    def _build_powershell_menu(self, parent: QMenu) -> QMenu:
+        """Second-level menu: open PowerShell in the app folder, in any of the
+        recently-scanned Claude project folders, or (re)scan to populate them."""
+        sub = QMenu("Open PowerShell", parent)
+
+        act_app = QAction("App Folder", sub)
+        act_app.triggered.connect(lambda: self._open_powershell(None))
+        sub.addAction(act_app)
+
+        recents = list(self._config.recent_project_paths or [])
+        if recents:
+            sub.addSeparator()
+            for path in recents[:5]:
+                label = self._shorten_path(path)
+                act = QAction(label, sub)
+                act.setToolTip(path)
+                act.triggered.connect(lambda _=False, p=path: self._open_powershell(p))
+                sub.addAction(act)
+
+        sub.addSeparator()
+        act_scan = QAction("Scan for recent Claude projects", sub)
+        act_scan.triggered.connect(self._scan_claude_projects)
+        sub.addAction(act_scan)
+        return sub
+
+    @staticmethod
+    def _shorten_path(path: str) -> str:
+        """Compact a folder path for a menu label: '…\\parent\\leaf'."""
+        parts = path.replace("/", "\\").rstrip("\\").split("\\")
+        if len(parts) <= 2:
+            return path
+        return "…\\" + "\\".join(parts[-2:])
+
+    def _open_powershell(self, folder) -> None:
+        """Open a PowerShell window (PS7 if available) in *folder*, or the app
+        folder when *folder* is None."""
+        from .. import shell
+
+        target = shell.app_folder() if folder is None else folder
+        if shell.open_powershell(target):
+            self._flash_status("opened PowerShell ▸")
+        else:
+            self._flash_status("no PowerShell found")
+
+    def _scan_claude_projects(self) -> None:
+        """Explicitly scan Claude Code's logs for recent CLAUDE.md project folders
+        and cache them in the config so the menu stays filled across restarts."""
+        from .. import shell
+
+        found = shell.scan_claude_projects(limit=5)
+        self._config.recent_project_paths = found
+        self._config.save()
+        n = len(found)
+        self._flash_status(f"found {n} recent project{'s' if n != 1 else ''}")
 
     def _set_sound_on_reset(self, enabled: bool) -> None:
         self._config.sound_on_reset = enabled

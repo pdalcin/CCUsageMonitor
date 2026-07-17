@@ -58,7 +58,11 @@ No console window; Python + Qt are bundled into the single exe.
 - **Drag** anywhere (any monitor) — position is remembered.
 - **Double-click** to collapse to a compact pill; again to expand.
 - **Right-click** for the menu: Refresh now · Collapse/Expand · Reset position · Sound on reset ·
-  Hide to tray · Quit.
+  Test alarm sound · Fix credentials… · **Open PowerShell ▸** · Hide to tray · Quit.
+- **Open PowerShell ▸** opens a PowerShell 7 window (falling back to Windows PowerShell) in the app
+  folder, in any of your recent Claude project folders, or **Scan for recent Claude projects** to
+  (re)populate that list from your local Claude Code history. The scanned list is remembered across
+  restarts and only refreshes when you scan.
 - **System-tray icon** (terracotta ring): click to show/hide; right-click for Show / Refresh / Reset
   / Quit. Closing the card (✕) or minimizing hides it to the tray — it never gets stuck off-screen.
 - **`⟳` Refresh** re-checks usage on demand (local instantly; the API is throttled to avoid the
@@ -78,7 +82,8 @@ The overlay reads the OAuth token Claude Code stores locally. If it can't find o
   Claude Code sign-in is too old to refresh. The app judges validity by the **actual usage-API
   response**, not just whether a file exists, so in that case it shows "limits: re-auth in Claude
   Code" and the helper says *"Your saved Claude login is no longer valid."* Fix it by running
-  `claude` to sign in again, then click **Re-check now**.
+  `claude` to sign in again, then click **Re-check now**. The helper has an **Open PowerShell**
+  button that opens a shell in the app folder so you can run `claude` right there.
 - The **Fix credentials…** dialog (also on the tray menu) shows exactly where it looked and the live
   state — signed-in-and-verified, rejected/expired, or found-but-unverified. It pops up automatically
   the first time a credential problem is detected, and **Re-check now** re-validates against Anthropic
