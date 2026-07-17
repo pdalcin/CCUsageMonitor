@@ -108,17 +108,50 @@ def _try_load(path: Path) -> Credentials | None:
     )
 
 
-def load_credentials(override: str | None = None) -> Credentials | None:
-    """Return the first valid credentials found, or None. Never raises.
+def load_credentials_from(path: str | Path) -> Credentials | None:
+    """Load credentials from exactly one file, ignoring any fallback. Used to
+    validate a user-chosen ``.credentials.json`` regardless of expiry/OMP."""
+    return _try_load(Path(path).expanduser())
 
-    Tries Claude Code's own credential files first; only if none is found does it
-    fall back to reading a token out of OMP/oh-my-pi's store (see
-    ``load_omp_credentials``) as a last resort."""
+
+def _load_claude_code(override: str | None) -> Credentials | None:
+    """First credentials found in Claude Code's own credential files, or None."""
     for path in credentials_search_paths(override):
         creds = _try_load(path)
         if creds is not None:
             return creds
-    return load_omp_credentials()
+    return None
+
+
+def load_credentials(
+    override: str | None = None, priority: str = "claude_code"
+) -> Credentials | None:
+    """Return the first usable credentials found, or None. Never raises.
+
+    ``priority`` controls the search order between Claude Code's own credential
+    files and the experimental OMP/oh-my-pi fallback:
+
+      * ``"claude_code"`` (default): Claude Code first. If none is found, fall back
+        to OMP. If a Claude Code token *is* found but has **expired**, also check
+        OMP and prefer a non-expired OMP token when one exists.
+      * ``"omp"`` (experimental): OMP first; fall back to Claude Code's files.
+    """
+    if priority == "omp":
+        omp = load_omp_credentials()
+        if omp is not None:
+            return omp
+        return _load_claude_code(override)
+
+    cc = _load_claude_code(override)
+    if cc is None:
+        return load_omp_credentials()
+    if cc.is_expired:
+        # Claude Code's saved login is stale — try OMP as a fallback and prefer it
+        # only if it actually offers a non-expired token.
+        omp = load_omp_credentials()
+        if omp is not None and not omp.is_expired:
+            return omp
+    return cc
 
 
 # ---------------------------------------------------------------------------

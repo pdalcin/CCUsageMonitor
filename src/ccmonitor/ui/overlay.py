@@ -412,6 +412,14 @@ class OverlayWindow(QWidget):
         finally:
             self._creds_dialog = None
 
+    def open_settings_dialog(self) -> None:
+        """Show the Settings window (credentials + search priority)."""
+        from .settings_dialog import SettingsDialog
+
+        self.show_and_raise()
+        dlg = SettingsDialog(self._config, self._service, parent=self)
+        dlg.exec()
+
     def _warn_omp(self) -> None:
         """One-time heads-up that we're authenticating via OMP, not Claude Code."""
         from PySide6.QtWidgets import QMessageBox
@@ -543,10 +551,13 @@ class OverlayWindow(QWidget):
         act_test = QAction("Test alarm sound", self)
         act_test.triggered.connect(self.test_alarm)
         menu.addAction(act_test)
+        act_settings = QAction("Settings…", self)
+        act_settings.triggered.connect(self.open_settings_dialog)
+        menu.addAction(act_settings)
         act_creds = QAction("Fix credentials…", self)
         act_creds.triggered.connect(self.open_credentials_dialog)
         menu.addAction(act_creds)
-        menu.addMenu(self._build_powershell_menu(menu))
+        menu.addMenu(self.build_powershell_menu(menu))
         act_hide = QAction("Hide to tray", self)
         act_hide.triggered.connect(self._on_close_clicked)
         menu.addAction(act_hide)
@@ -557,11 +568,20 @@ class OverlayWindow(QWidget):
         menu.exec(self.mapToGlobal(pos))
 
     # -- open-PowerShell submenu --------------------------------------------
-    def _build_powershell_menu(self, parent: QMenu) -> QMenu:
+    def build_powershell_menu(self, parent: QMenu) -> QMenu:
         """Second-level menu: open PowerShell in the app folder, in any of the
-        recently-scanned Claude project folders, or (re)scan to populate them."""
-        sub = QMenu("Open PowerShell", parent)
+        recently-scanned Claude project folders, or (re)scan to populate them.
 
+        Reused by both the overlay context menu and the tray menu. It repopulates
+        itself on ``aboutToShow`` so a scan taken from either place is reflected
+        immediately without rebuilding the whole menu."""
+        sub = QMenu("Open PowerShell", parent)
+        sub.aboutToShow.connect(lambda: self._populate_powershell_menu(sub))
+        self._populate_powershell_menu(sub)
+        return sub
+
+    def _populate_powershell_menu(self, sub: QMenu) -> None:
+        sub.clear()
         act_app = QAction("App Folder", sub)
         act_app.triggered.connect(lambda: self._open_powershell(None))
         sub.addAction(act_app)
@@ -570,8 +590,7 @@ class OverlayWindow(QWidget):
         if recents:
             sub.addSeparator()
             for path in recents[:5]:
-                label = self._shorten_path(path)
-                act = QAction(label, sub)
+                act = QAction(self._shorten_path(path), sub)
                 act.setToolTip(path)
                 act.triggered.connect(lambda _=False, p=path: self._open_powershell(p))
                 sub.addAction(act)
@@ -580,7 +599,6 @@ class OverlayWindow(QWidget):
         act_scan = QAction("Scan for recent Claude projects", sub)
         act_scan.triggered.connect(self._scan_claude_projects)
         sub.addAction(act_scan)
-        return sub
 
     @staticmethod
     def _shorten_path(path: str) -> str:

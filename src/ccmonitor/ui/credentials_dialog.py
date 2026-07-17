@@ -118,7 +118,10 @@ class CredentialsDialog(QDialog):
         self._refresh_view()
 
     def _refresh_view(self) -> None:
-        creds = credentials.load_credentials(self._config.credentials_path)
+        creds = credentials.load_credentials(
+            self._config.credentials_path,
+            priority=getattr(self._config, "credential_priority", "claude_code"),
+        )
         status = self._service.state.limits_status
         refreshing = self._service.state.refreshing
         show_paths = False
@@ -216,7 +219,7 @@ class CredentialsDialog(QDialog):
         )
         if not chosen:
             return
-        if credentials.load_credentials(chosen) is None:
+        if credentials.load_credentials_from(chosen) is None:
             self._note_text = (
                 "That file doesn't contain a Claude OAuth token — pick your "
                 "Claude Code .credentials.json."

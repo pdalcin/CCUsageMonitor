@@ -115,7 +115,10 @@ class DataService(QObject):
     # -- api -----------------------------------------------------------------
     def _poll_api(self) -> None:
         self._last_api_attempt = time.time()
-        creds = credentials.load_credentials(self._config.credentials_path)
+        creds = credentials.load_credentials(
+            self._config.credentials_path,
+            priority=getattr(self._config, "credential_priority", "claude_code"),
+        )
         self._state.token_present = creds is not None
         self._state.credentials_via_omp = bool(creds is not None and creds.is_omp)
         if creds is None:

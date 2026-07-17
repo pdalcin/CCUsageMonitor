@@ -41,6 +41,11 @@ class Config:
     # where it isn't in a standard location. None => auto-search.
     credentials_path: str | None = None
 
+    # Which credential source to search first: "claude_code" (default) or "omp"
+    # (experimental). With "claude_code", an expired Claude Code login also falls
+    # back to OMP; with "omp", OMP is tried first and Claude Code is the fallback.
+    credential_priority: str = "claude_code"
+
     # Poll intervals (seconds).
     local_poll_seconds: float = 2.0
     api_poll_seconds: float = 300.0

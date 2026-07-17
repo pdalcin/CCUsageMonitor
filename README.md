@@ -58,13 +58,17 @@ No console window; Python + Qt are bundled into the single exe.
 - **Drag** anywhere (any monitor) — position is remembered.
 - **Double-click** to collapse to a compact pill; again to expand.
 - **Right-click** for the menu: Refresh now · Collapse/Expand · Reset position · Sound on reset ·
-  Test alarm sound · Fix credentials… · **Open PowerShell ▸** · Hide to tray · Quit.
+  Test alarm sound · **Settings…** · Fix credentials… · **Open PowerShell ▸** · Hide to tray · Quit.
+- **Settings…** opens a window to manage your Claude Code credentials and choose the **credential
+  search priority**: *Claude Code first* (recommended) or *OMP (oh-my-pi) first* (experimental). With
+  Claude Code first, an **expired** Claude Code login also falls back to OMP automatically.
 - **Open PowerShell ▸** opens a PowerShell 7 window (falling back to Windows PowerShell) in the app
   folder, in any of your recent Claude project folders, or **Scan for recent Claude projects** to
   (re)populate that list from your local Claude Code history. The scanned list is remembered across
   restarts and only refreshes when you scan.
-- **System-tray icon** (terracotta ring): click to show/hide; right-click for Show / Refresh / Reset
-  / Quit. Closing the card (✕) or minimizing hides it to the tray — it never gets stuck off-screen.
+- **System-tray icon** (terracotta ring): click to show/hide; right-click for Show · Refresh ·
+  Settings… · Fix credentials… · Open PowerShell ▸ · Test alarm · Reset · Quit. Closing the card (✕)
+  or minimizing hides it to the tray — it never gets stuck off-screen.
 - **`⟳` Refresh** re-checks usage on demand (local instantly; the API is throttled to avoid the
   endpoint's rate limit).
 
