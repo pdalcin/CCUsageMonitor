@@ -187,7 +187,7 @@ class OverlayWindow(QWidget):
 
         self.reset_label = QLabel("")
         rf = QFont(theme.FONT_FAMILY)
-        rf.setPixelSize(10)
+        rf.setPixelSize(15)
         self.reset_label.setFont(rf)
         self.reset_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.reset_label.setStyleSheet(f"color: {theme.TEXT_DIM.name()};")
