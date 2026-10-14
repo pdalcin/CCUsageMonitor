@@ -15,7 +15,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -133,7 +136,7 @@ def load_credentials(
 
       * ``"claude_code"`` (default): Claude Code first. If none is found, fall back
         to OMP. If a Claude Code token *is* found but has **expired**, also check
-        OMP and prefer a non-expired OMP token when one exists.
+        OMP and prefer the OMP token when one exists (OMP can renew it).
       * ``"omp"`` (experimental): OMP first; fall back to Claude Code's files.
     """
     if priority == "omp":
@@ -146,10 +149,10 @@ def load_credentials(
     if cc is None:
         return load_omp_credentials()
     if cc.is_expired:
-        # Claude Code's saved login is stale — try OMP as a fallback and prefer it
-        # only if it actually offers a non-expired token.
+        # Claude Code's saved login is stale and only Claude Code can refresh it.
+        # An OMP token is better even if expired: refresh_omp_token() renews it.
         omp = load_omp_credentials()
-        if omp is not None and not omp.is_expired:
+        if omp is not None:
             return omp
     return cc
 
@@ -163,9 +166,6 @@ def load_credentials(
 # undocumented, so instead of assuming table/column names we open the DB
 # READ-ONLY and scan every cell for an Anthropic OAuth access token. If the
 # payload is encrypted (no recognisable token), we simply find nothing.
-#
-# NOTE: developed without OMP installed on the dev machine — the token-shape and
-# read path are best-effort and want validation by a real OMP user.
 # ---------------------------------------------------------------------------
 def omp_db_paths() -> list[Path]:
     """Candidate locations of OMP's auth SQLite database."""
@@ -204,7 +204,8 @@ def _extract_token_fields(text: str) -> dict | None:
     subscription_type = None
     try:  # if the cell is JSON, opportunistically recover metadata
         obj = json.loads(text)
-        exp = _first_value(obj, {"expiresAt", "expires_at", "expiresAtMs"})
+        # OMP stores ``expires`` (epoch ms); Claude Code uses ``expiresAt``.
+        exp = _first_value(obj, {"expires", "expiresAt", "expires_at", "expiresAtMs"})
         if isinstance(exp, int):
             expires_at_ms = exp
         subscription_type = _first_value(obj, {"subscriptionType", "subscription_type"})
@@ -279,3 +280,43 @@ def load_omp_credentials() -> Credentials | None:
         if creds is not None:
             return creds
     return None
+
+
+def _omp_exe() -> str | None:
+    exe = shutil.which("omp")
+    if exe:
+        return exe
+    # A GUI launch may not inherit the shell PATH; bun's default install dir.
+    fallback = Path.home() / ".bun" / "bin" / ("omp.exe" if os.name == "nt" else "omp")
+    return str(fallback) if fallback.exists() else None
+
+
+def refresh_omp_token() -> Credentials | None:
+    """Get a valid Anthropic access token from OMP itself (``omp token anthropic``).
+
+    OMP refreshes an expired OAuth token and saves the rotated refresh token in its
+    own store, under its own refresh lease. We never use the refresh token
+    ourselves: Anthropic rotates it, so a refresh here would log OMP out.
+    Blocking (~1 s); call it off the UI thread. Returns None on any failure."""
+    exe = _omp_exe()
+    if exe is None:
+        return None
+    try:
+        proc = subprocess.run(
+            [exe, "token", "anthropic"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # An API key (sk-ant-api…) from ANTHROPIC_API_KEY cannot read OAuth usage.
+    m = _OAT_RE.fullmatch(proc.stdout.strip()) if proc.returncode == 0 else None
+    if m is None:
+        return None
+    # Re-read the store for the new expiry; fall back to the bare token.
+    stored = load_omp_credentials()
+    if stored is not None and stored.access_token == m.group(0):
+        return stored
+    return Credentials(m.group(0), None, None, None, source_path=None, is_omp=True)

@@ -67,9 +67,12 @@ that keeps provider credentials in a local SQLite DB (`~/.omp/agent/agent.db`, o
 `PI_CONFIG_DIR`) instead of a JSON file. We open that DB **read-only** and scan every cell for an
 Anthropic access token (`sk-ant-oat01-…`) — schema-agnostic, so it survives OMP's versioned schema.
 If found, the app runs on it but warns the user once: the session panel can't populate (OMP writes no
-Claude Code JSONL logs) and limits ride on OMP's token. **Untested without OMP installed — needs a
-real OMP user to validate** that (a) the token is stored unencrypted and (b) it's accepted by
-`/api/oauth/usage`.
+Claude Code JSONL logs) and limits ride on OMP's token. Verified against a real OMP install (schema
+v8): the token is plain JSON (`access`, `refresh`, `expires` in epoch ms) and `/api/oauth/usage`
+accepts it. **Renewal:** OMP tokens live ~8 h and OMP only refreshes them while it runs. When the
+stored token is expired, or the API answers 401, the worker runs `omp token anthropic`; OMP renews
+the token under its own refresh lease and saves it. We never use the refresh token ourselves —
+Anthropic rotates it, so that would log OMP out.
 
 **Rate-limit discipline (critical):** the endpoint 429s hard.
 - Poll **no faster than every 180 s**; default to **300 s**.

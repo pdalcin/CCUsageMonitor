@@ -43,13 +43,22 @@ class _UsageWorker(QRunnable):
     class _Signals(QObject):
         done = Signal(object)
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, creds: credentials.Credentials) -> None:
         super().__init__()
-        self._token = token
+        self._creds = creds
         self.signals = self._Signals()
 
     def run(self) -> None:  # noqa: D401 - Qt entry point
-        result = usage_api.fetch_usage(self._token)
+        creds = self._creds
+        # An OMP token expires every few hours while OMP sits idle; ask OMP to
+        # renew it instead of sending a dead token (or making the user sign in).
+        if creds.is_omp and creds.is_expired:
+            creds = credentials.refresh_omp_token() or creds
+        result = usage_api.fetch_usage(creds.access_token)
+        if result.status == "unauthorized" and creds.is_omp:
+            renewed = credentials.refresh_omp_token()
+            if renewed is not None and renewed.access_token != creds.access_token:
+                result = usage_api.fetch_usage(renewed.access_token)
         self.signals.done.emit(result)
 
 
@@ -128,12 +137,12 @@ class DataService(QObject):
             return
         self._state.subscription = creds.subscription_type
         self._state.token_expired = creds.is_expired
-        if creds.is_expired:
+        if creds.is_expired and not creds.is_omp:
             self._state.limits_status = "unauthorized"
             self._state.refreshing = False
             self.stateChanged.emit(self._state)
             return
-        worker = _UsageWorker(creds.access_token)
+        worker = _UsageWorker(creds)
         worker.signals.done.connect(self._on_api_result)
         self._pool.start(worker)
 

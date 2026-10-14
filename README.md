@@ -95,13 +95,13 @@ The overlay reads the OAuth token Claude Code stores locally. If it can't find o
 
 ### OMP (oh-my-pi) fallback — experimental
 
-If no Claude Code login is found, the app makes a **last-resort, read-only** attempt to recover a
-Claude OAuth token from [OMP / oh-my-pi](https://omp.sh)'s local SQLite store
-(`~/.omp/agent/agent.db`, or under `PI_CONFIG_DIR`). If it works, you'll get a one-time warning that
-you're running on OMP credentials with a **limited experience**: the session tokens/cost/model panel
-stays empty (OMP doesn't write Claude Code session logs) and limits come from OMP's token. Signing in
-with Claude Code is recommended. This path was developed without OMP on hand and **needs validation
-by an OMP user** — please report back if it does or doesn't work for you.
+If no Claude Code login is found, the app reads the Claude OAuth token **read-only** from
+[OMP / oh-my-pi](https://omp.sh)'s local SQLite store (`~/.omp/agent/agent.db`, or under
+`PI_CONFIG_DIR`). OMP access tokens expire every ~8 hours; when the stored token is expired or
+rejected, the app runs `omp token anthropic` so OMP renews it in its own store — no new sign-in
+needed. (`omp` must be on `PATH` or in `~/.bun/bin`.) You'll get a one-time warning that you're
+running on OMP credentials with a **limited experience**: the session tokens/cost/model panel stays
+empty (OMP doesn't write Claude Code session logs) and limits come from OMP's token.
 
 ## A note on the usage endpoint
 
