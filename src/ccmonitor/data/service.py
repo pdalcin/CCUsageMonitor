@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 
-from . import credentials, session_reader, usage_api
+from . import credentials, live_sessions, session_reader, usage_api
+from .live_sessions import LiveSession
 from .session_reader import SessionStats
 from .usage_api import UsageLimits, Window
 
@@ -21,6 +22,7 @@ from .usage_api import UsageLimits, Window
 @dataclass
 class AppState:
     session: SessionStats | None = None
+    live_sessions: list[LiveSession] = field(default_factory=list)  # only while tracked
     limits: UsageLimits | None = None
     limits_fetched_at: float | None = None   # monotonic-ish wall time of last good fetch
     limits_status: str = "loading"             # mirrors usage_api status; "loading" before 1st fetch
@@ -87,6 +89,9 @@ class DataService(QObject):
         # Live-limits API enabled: response shape captured + parser tightened
         # (docs/samples/oauth-usage.sample.json). Polls at >= MIN_POLL_SECONDS.
         self.api_enabled = True
+        # Enumerate every running Claude Code session on each local poll. Only the
+        # "full" overlay view shows them, so it turns this on and off.
+        self.track_live_sessions = False
 
         self._local_timer = QTimer(self)
         self._local_timer.timeout.connect(self._poll_local)
@@ -119,7 +124,20 @@ class DataService(QObject):
         except Exception:
             stats = None
         self._state.session = stats
+        if self.track_live_sessions:
+            try:
+                self._state.live_sessions = live_sessions.list_live_sessions()
+            except Exception:
+                self._state.live_sessions = []
+        else:
+            self._state.live_sessions = []
         self.stateChanged.emit(self._state)
+
+    def set_track_live_sessions(self, enabled: bool) -> None:
+        if enabled == self.track_live_sessions:
+            return
+        self.track_live_sessions = enabled
+        self._poll_local()
 
     # -- api -----------------------------------------------------------------
     def _poll_api(self) -> None:

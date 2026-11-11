@@ -29,7 +29,9 @@ class Config:
     # primary screen on first launch.
     pos_x: int | None = None
     pos_y: int | None = None
-    collapsed: bool = False
+    # Overlay size: "compact" (pill), "expanded" (the card) or "full" (card plus
+    # every Claude Code session running on this machine).
+    view_mode: str = "expanded"
     opacity: float = 0.95
     click_through: bool = False
 
@@ -71,6 +73,9 @@ class Config:
             data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             return cls()
+        if isinstance(data, dict) and "view_mode" not in data and "collapsed" in data:
+            # Pre-0.2 configs stored a bool; carry it over to the new mode name.
+            data["view_mode"] = "compact" if data["collapsed"] else "expanded"
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         clean = {k: v for k, v in data.items() if k in known}
         return cls(**clean)

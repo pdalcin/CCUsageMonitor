@@ -40,6 +40,7 @@ def usage_color(fraction: float) -> QColor:
 CARD_RADIUS = 14
 CARD_PADDING = 12
 CARD_WIDTH = 240
+CARD_WIDTH_FULL = 340     # full view: room for the running-sessions panel
 PILL_WIDTH = 96
 PILL_HEIGHT = 40
 

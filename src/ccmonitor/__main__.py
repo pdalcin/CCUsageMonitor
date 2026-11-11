@@ -2,12 +2,19 @@
 
 Wires config -> DataService -> OverlayWindow, adds a system-tray icon (the always-
 available way to show/hide/quit the overlay), and runs the Qt loop.
+
+Single instance: the first copy listens on a per-user local socket. A later launch
+connects, asks it to come forward fully expanded, and exits instead of opening a
+second overlay.
 """
 
 from __future__ import annotations
 
+import getpass
 import sys
 
+from PySide6.QtCore import QByteArray
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from PySide6.QtGui import QAction
 
@@ -98,12 +105,70 @@ def _build_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     return tray
 
 
+def _instance_key() -> str:
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "user"
+    return f"CCUsageMonitor-{user}"
+
+
+_ACTIVATE = b"activate\n"
+
+
+def _signal_running_instance(key: str) -> bool:
+    """True if another copy is already running (it has been asked to show itself)."""
+    sock = QLocalSocket()
+    sock.connectToServer(key)
+    if not sock.waitForConnected(500):
+        return False
+    if sys.platform == "win32":
+        # We were just launched by the user, so we hold foreground rights; pass them
+        # on so the running copy may actually take focus instead of only flashing.
+        import ctypes
+        ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
+    sock.write(QByteArray(_ACTIVATE))
+    sock.waitForBytesWritten(500)
+    sock.disconnectFromServer()
+    return True
+
+
+def _listen_for_launches(app: QApplication, key: str, on_activate) -> QLocalServer | None:
+    server = QLocalServer(app)
+    # Only this user may connect; a crashed run can leave a stale pipe name behind.
+    server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
+    if not server.listen(key):
+        QLocalServer.removeServer(key)
+        if not server.listen(key):
+            return None
+
+    def _on_connection() -> None:
+        while server.hasPendingConnections():
+            conn = server.nextPendingConnection()
+            conn.readyRead.connect(lambda c=conn: _on_ready(c))
+            conn.disconnected.connect(conn.deleteLater)
+            if conn.bytesAvailable():  # already arrived before readyRead was hooked up
+                _on_ready(conn)
+
+    def _on_ready(conn: QLocalSocket) -> None:
+        if bytes(conn.readAll().data()).startswith(_ACTIVATE.strip()):
+            on_activate()
+
+    server.newConnection.connect(_on_connection)
+    return server
+
+
 def main() -> int:
     app = QApplication(sys.argv)
+
+    key = _instance_key()
+    if _signal_running_instance(key):
+        return 0
 
     config = Config.load()
     service = DataService(config)
     window = OverlayWindow(config, service)
+    server = _listen_for_launches(app, key, window.show_full)  # noqa: F841 - kept alive
 
     tray = None
     if QSystemTrayIcon.isSystemTrayAvailable():

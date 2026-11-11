@@ -32,16 +32,17 @@ shared state object; the UI reads it on a timer and animates gauges toward new v
 
 | Module | Responsibility | Depends on |
 |---|---|---|
-| `config.py` | Load/save JSON settings to `%APPDATA%/CCUsageMonitor/config.json`: window x/y, collapsed?, poll intervals, opacity, monitored project path, manual-limit overrides. | stdlib |
+| `config.py` | Load/save JSON settings to `%APPDATA%/CCUsageMonitor/config.json`: window x/y, `view_mode` (compact/expanded/full; migrated from the old `collapsed` flag), poll intervals, opacity, monitored project path, manual-limit overrides. | stdlib |
 | `data/credentials.py` | Read `~/.claude/.credentials.json`; expose token + expiry + subscription. Never logs the token. | stdlib |
-| `data/session_reader.py` | Find current session JSONL; parse; return `SessionStats` (tokens by kind, model, start time, message count). | stdlib |
+| `data/session_reader.py` | Find current session JSONL; parse; return `SessionStats` (tokens by kind, model, effort, start time, message count). Parses are cached per file and resumed from the last byte read, so polling large/busy logs only costs their new lines. | stdlib |
+| `data/live_sessions.py` | List running Claude Code sessions from `~/.claude/sessions/<pid>.json`, keeping only entries whose pid is alive with a matching creation time; attach each one's `SessionStats`. | session_reader |
 | `data/pricing.py` | `cost(model, usage) -> float`. Table of per-MTok prices incl. cache read/write tiers. Unknown model → 0 + flag. | — |
 | `data/usage_api.py` | One function `fetch_usage(token, ua) -> UsageLimits` (5h/7d utilization, reset, limit). Handles headers, timeouts, 429/401 mapping. Pure/testable. | credentials |
-| `data/service.py` | `DataService(QObject)` — owns timers + threadpool, merges sources into `AppState`, emits `stateChanged`. | all data/* |
+| `data/service.py` | `DataService(QObject)` — owns timers + threadpool, merges sources into `AppState`, emits `stateChanged`. Enumerates live sessions on each local poll only while `track_live_sessions` is on (the overlay's full view). | all data/* |
 | `ui/theme.py` | Colors, fonts, sizes, light/dark. Single source of visual truth. | — |
 | `ui/gauges.py` | `RingGauge`, `BarGauge` widgets with an animatable `value` Qt property (0..1), color thresholds, pulse-on-change. | theme |
-| `ui/overlay.py` | `OverlayWindow` — frameless, `WindowStaysOnTopHint`, translucent bg, drag-to-move, collapse/expand, right-click menu (settings/quit), position persistence. | gauges, config |
-| `__main__.py` | Wire config → DataService → OverlayWindow; `QApplication` loop. | all |
+| `ui/overlay.py` | `OverlayWindow` — frameless, `WindowStaysOnTopHint`, translucent bg, drag-to-move, compact/expanded/full views, right-click menu (settings/quit), position persistence. | gauges, config |
+| `__main__.py` | Single-instance guard; wire config → DataService → OverlayWindow; tray; `QApplication` loop. | all |
 
 ## Overlay window specifics (Qt/Windows)
 
@@ -52,8 +53,13 @@ shared state object; the UI reads it on a timer and animates gauges toward new v
   Persist final position to `config` on release.
 - **Multi-monitor:** positions are stored in global virtual-desktop coordinates; on startup clamp
   into the nearest available `QScreen` geometry so it can't be lost off a disconnected monitor.
-- **Collapse:** toggles between full card and a tiny pill (e.g. a single mini-ring + %). State
-  persisted.
+- **View modes:** `compact` (a pill: mini-ring + %), `expanded` (the card) and `full` (the card,
+  widened, plus a running-sessions panel). `set_view_mode()` is the single switch; the mode is
+  persisted. When a larger view would hang off its screen the window is nudged back inside without
+  saving that position.
+- **Single instance:** at startup `__main__` connects to a per-user `QLocalServer` name
+  (`CCUsageMonitor-<user>`). If one answers, it sends `activate` and exits; the running copy calls
+  `OverlayWindow.show_full()` (show + raise + full view). Otherwise this copy starts listening.
 - **Minimize to tray (stretch):** `QSystemTrayIcon` to fully hide/show.
 - **Click-through / lock (stretch):** optional mode that ignores mouse so it's purely decorative.
 

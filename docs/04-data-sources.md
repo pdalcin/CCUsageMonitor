@@ -25,12 +25,30 @@ Everything here was confirmed by inspecting the live machine, not assumed.
 
   and `message.model` (e.g. `claude-opus-4-8`). Records carry a `timestamp` (ISO-8601 Z).
 
+- **Reasoning effort:** assistant records also carry top-level `effort` (the session's setting)
+  and `perTurnEffort` (what that turn actually ran at; may be `null`), e.g. `"medium"`, `"high"`.
+  We show the latest `perTurnEffort`, else `effort`. Before a session has logged a turn we fall
+  back to `~/.claude/settings.json` → `modelSettings.<model>.effortLevel`, then `effortLevel`.
+  (Verified on Claude Code 2.1.302.)
+
 - **Current session detection:** the session whose `.jsonl` was **most recently modified**
   under the project dir (or a specific `sessionId` if we launch scoped to one). Session start =
   first record timestamp; "session time" = now − start.
 - **Cost:** derived from token counts × per-model pricing (`pricing.py`). Cache-read and
   cache-write tokens are priced differently from fresh input tokens.
 - **No auth required.** Pure file reads. This path always works even if the network / API is down.
+
+## 1b. Running sessions registry — every live Claude Code process
+
+- **Location:** `~/.claude/sessions/<pid>.json`, one per interactive Claude Code process (verified
+  on 2.1.302). Fields used: `pid`, `sessionId`, `cwd`, `name`, `status` (`busy` / `idle`),
+  `version`, `startedAt` (epoch ms), `procStart` (Windows FILETIME of the process creation time).
+- **Staleness:** a file can outlive a crashed process, and pids get reused. An entry counts as
+  live only if the pid is running *and* its creation time (`GetProcessTimes`) matches `procStart`
+  within 1 s. Off Windows we fall back to a plain pid check.
+- **Per-session stats:** the transcript is
+  `~/.claude/projects/<encoded cwd>/<sessionId>.jsonl` (searched by id if the encoding differs),
+  parsed exactly like section 1.
 
 ## 2. Live usage limits — 5-hour + weekly windows
 

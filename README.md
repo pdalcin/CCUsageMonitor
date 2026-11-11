@@ -2,13 +2,15 @@
 
 A tiny, movable, always-on-top **desktop overlay** for Windows that shows your live Claude Code
 session usage and your Claude plan limits — in the spirit of *Bongo Cat*: non-intrusive, lives in a
-corner, draggable across monitors, collapsible.
+corner, draggable across monitors, with compact / expanded / full views.
 
 Shows at a glance:
 - **Session limit %** (5-hour window) with reset countdown
-- **Weekly limit %** (7-day window)
+- **Weekly limit %** (7-day window) with reset countdown
 - **Live tokens & estimated cost** for the current Claude Code session
-- **Current model & session time**
+- **Current model, reasoning effort & session time**
+- **Every Claude Code session running on this machine** (full view): name, folder, busy/idle,
+  model, effort, tokens, cost and duration for each
 
 The playful element is a set of **animated ring gauges** that glide and color-shift (green →
 amber → red) as usage climbs. A chime plays when your 5-hour window resets.
@@ -16,8 +18,10 @@ amber → red) as usage climbs. A chime plays when your 5-hour window resets.
 ## Uses your own Claude account — nothing is bundled or shared
 
 This app reads **your** local Claude Code data on the machine it runs on:
-- **Session tokens / cost / model / time** — parsed from Claude Code's local session logs at
-  `~/.claude/projects/**/*.jsonl`. No network, no auth.
+- **Session tokens / cost / model / effort / time** — parsed from Claude Code's local session logs
+  at `~/.claude/projects/**/*.jsonl`. No network, no auth.
+- **Running sessions** — Claude Code's own registry of live processes at
+  `~/.claude/sessions/<pid>.json`, cross-checked against the OS so stale entries are ignored.
 - **Session / weekly limits** — the `GET api.anthropic.com/api/oauth/usage` endpoint, authenticated
   with the OAuth token Claude Code **already stores** at `~/.claude/.credentials.json`.
 
@@ -47,6 +51,10 @@ cd CCUsageMonitor
 Then double-click **`dist\CCUsageMonitor.exe`** in Explorer, or right-click → **Pin to taskbar**.
 No console window; Python + Qt are bundled into the single exe.
 
+Only one copy runs at a time: launching it again (e.g. clicking the pinned icon while it's already
+running, even hidden in the tray) brings the existing overlay to the front **fully expanded**
+instead of opening a second one.
+
 **Dev run from source** (no packaging):
 
 ```powershell
@@ -56,9 +64,18 @@ No console window; Python + Qt are bundled into the single exe.
 ## Using it
 
 - **Drag** anywhere (any monitor) — position is remembered.
-- **Double-click** to collapse to a compact pill; again to expand.
-- **Right-click** for the menu: Refresh now · Collapse/Expand · Reset position · Sound on reset ·
-  Test alarm sound · **Settings…** · Fix credentials… · **Open PowerShell ▸** · Hide to tray · Quit.
+- **Three views**, picked from the right-click menu (the current one is checked):
+  - **Compact** — a small pill with the 5-hour %.
+  - **Expand** — the card: both limit rings with their reset countdowns (5-hour and weekly), plus
+    tokens, est. cost, model, **effort** and session time for the session being read.
+  - **Full expand** — the card plus a panel listing **every Claude Code session running on this
+    machine** (busy first). The session the card is reading is marked with ▸.
+
+  The card's title bar has `—` (compact) and `⤢`/`⤡` (full expand / back to expand) buttons.
+  **Double-click** toggles compact ↔ expand. The view is remembered across restarts.
+- **Right-click** for the menu: Refresh now · Compact / Expand / Full expand · Reset position ·
+  Sound on reset · Test alarm sound · **Settings…** · Fix credentials… · **Open PowerShell ▸** ·
+  Hide to tray · Quit.
 - **Settings…** opens a window to manage your Claude Code credentials and choose the **credential
   search priority**: *Claude Code first* (recommended) or *OMP (oh-my-pi) first* (experimental). With
   Claude Code first, an **expired** Claude Code login also falls back to OMP automatically.

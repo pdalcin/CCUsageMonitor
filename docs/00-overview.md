@@ -3,9 +3,10 @@
 A small, movable, always-on-top **desktop overlay** for Windows that shows, at a glance:
 
 - **Session limit % used** — progress toward the current Claude 5-hour usage window, with time-until-reset.
-- **Weekly limit % used** — progress toward the 7-day usage window.
+- **Weekly limit % used** — progress toward the 7-day usage window, with time-until-reset.
 - **Live tokens / cost** — tokens and estimated $ burned in the *current* Claude Code session (read from local session logs).
-- **Current model + session time** — which model is active and how long the session has run.
+- **Current model, effort + session time** — which model is active, the reasoning effort it is running at, and how long the session has run.
+- **All running sessions** (full view) — every Claude Code session live on this machine, with its own model / effort / tokens / cost / time.
 
 Design inspiration: **Bongo Cat** — tiny, non-intrusive, lives in a corner, draggable across monitors, minimizable. Our "ludic" element is a set of **animated gauges** (rings/bars that fill and pulse as usage changes) rather than a character.
 
@@ -14,7 +15,8 @@ Design inspiration: **Bongo Cat** — tiny, non-intrusive, lives in a corner, dr
 **Goals**
 - Non-intrusive, compact (fits a screen corner), high-readability at small size.
 - Draggable anywhere, including across multiple monitors; remembers position.
-- Minimize / collapse to a tiny pill; restore on click.
+- Three views: compact pill, expanded card, full (card + all running sessions).
+- Single instance: launching again brings the running overlay forward, fully expanded.
 - Zero-friction data: reads what Claude Code already stores locally; queries live limits with the token Claude Code already holds.
 
 **Non-goals (v1)**
@@ -44,6 +46,7 @@ CCUsageMonitor/
 │   ├── data/
 │   │   ├── credentials.py    # read ~/.claude/.credentials.json OAuth token
 │   │   ├── session_reader.py # parse local JSONL -> current-session token totals
+│   │   ├── live_sessions.py  # list running Claude Code sessions (~/.claude/sessions)
 │   │   ├── usage_api.py      # poll /api/oauth/usage -> 5h + 7d limit state
 │   │   └── pricing.py        # token -> $ estimate per model
 │   └── ui/

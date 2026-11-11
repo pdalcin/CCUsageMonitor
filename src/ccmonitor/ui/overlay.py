@@ -1,15 +1,19 @@
 """OverlayWindow — the frameless, always-on-top, draggable card.
 
 Renders an ``AppState``: two ring gauges (5-hour session limit, 7-day weekly
-limit) plus text readouts for live tokens, estimated cost, current model, and
-session time. Draggable anywhere across monitors; position persists; collapses to
-a compact pill.
+limit) with both reset countdowns, plus text readouts for live tokens, estimated
+cost, current model, reasoning effort, and session time. Draggable anywhere across
+monitors; position persists.
+
+Three view modes (``Config.view_mode``): ``compact`` (a small pill), ``expanded``
+(the card) and ``full`` (the card plus a panel listing every Claude Code session
+running on this machine).
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QPainter, QPainterPath
+from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication,
     QGridLayout,
@@ -21,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..data.session_reader import default_effort
 from . import theme
 from .gauges import RingGauge
 
@@ -63,9 +68,23 @@ def fmt_reset(epoch: int | None) -> str:
     remaining = epoch - time.time()
     if remaining <= 0:
         return "resets soon"
-    h, rem = divmod(int(remaining), 3600)
+    d, rem = divmod(int(remaining), 86400)
+    h, rem = divmod(rem, 3600)
     m = rem // 60
+    if d:
+        return f"resets in {d}d {h}h"
     return f"resets in {h}h {m}m" if h else f"resets in {m}m"
+
+
+def short_path(path: str) -> str:
+    """Compact a folder path for a label: '…\\parent\\leaf'."""
+    parts = path.replace("/", "\\").rstrip("\\").split("\\")
+    if len(parts) <= 2:
+        return path
+    return "…\\" + "\\".join(parts[-2:])
+
+
+VIEW_MODES = ("compact", "expanded", "full")
 
 
 class _Readout(QWidget):
@@ -92,6 +111,62 @@ class _Readout(QWidget):
 
     def set(self, value: str) -> None:
         self.value.setText(value)
+
+
+class _SessionRow(QWidget):
+    """One running Claude Code session in the full view's sessions panel."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 4, 0, 4)
+        lay.setSpacing(1)
+
+        top = QHBoxLayout()
+        top.setSpacing(6)
+        self.name = QLabel("")
+        nf = QFont(theme.FONT_FAMILY)
+        nf.setPixelSize(12)
+        nf.setBold(True)
+        self.name.setFont(nf)
+        top.addWidget(self.name, 1)
+        self.status = QLabel("")
+        sf = QFont(theme.FONT_FAMILY)
+        sf.setPixelSize(10)
+        self.status.setFont(sf)
+        top.addWidget(self.status)
+        lay.addLayout(top)
+
+        small = QFont(theme.FONT_FAMILY)
+        small.setPixelSize(10)
+        self.path = QLabel("")
+        self.path.setFont(small)
+        self.path.setStyleSheet(f"color: {theme.TEXT_DIM.name()};")
+        lay.addWidget(self.path)
+        self.detail = QLabel("")
+        self.detail.setFont(small)
+        self.detail.setStyleSheet(f"color: {theme.TEXT.name()};")
+        lay.addWidget(self.detail)
+
+    def set(self, live, is_current: bool) -> None:
+        marker = "▸ " if is_current else ""
+        color = theme.ACCENT if is_current else theme.TEXT
+        self.name.setText(marker + live.name)
+        self.name.setStyleSheet(f"color: {color.name()};")
+        dot = theme.GAUGE_OK if live.status == "busy" else theme.TEXT_DIM
+        self.status.setText(f"● {live.status}")
+        self.status.setStyleSheet(f"color: {dot.name()};")
+        self.path.setText(short_path(live.cwd))
+        self.setToolTip(f"{live.cwd}\nsession {live.session_id}\npid {live.pid}")
+        st = live.stats
+        parts = [short_model(live.model), live.effort or "—"]
+        if st is not None:
+            parts += [
+                fmt_tokens(st.total_tokens),
+                fmt_cost(st.estimated_cost, st.cost_is_complete),
+                fmt_duration(st.session_duration_seconds),
+            ]
+        self.detail.setText("  ·  ".join(parts))
 
 
 class OverlayWindow(QWidget):
@@ -130,10 +205,12 @@ class OverlayWindow(QWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
 
+        self._mode = config.view_mode if config.view_mode in VIEW_MODES else "expanded"
         self._build_full()
         self._build_pill()
-        self._apply_collapsed(config.collapsed)
+        self.set_view_mode(self._mode)
         self._restore_position()
+        self._keep_on_screen()
 
         service.stateChanged.connect(self.update_state)
         service.sessionReset.connect(self._on_session_reset)
@@ -163,11 +240,19 @@ class OverlayWindow(QWidget):
         refresh_btn.clicked.connect(self.refresh_now)
         refresh_btn.setStyleSheet(self._btn_css())
         title_row.addWidget(refresh_btn)
-        collapse_btn = QPushButton("—")
-        collapse_btn.setFixedSize(18, 18)
-        collapse_btn.clicked.connect(lambda: self._apply_collapsed(True))
-        collapse_btn.setStyleSheet(self._btn_css())
-        title_row.addWidget(collapse_btn)
+        compact_btn = QPushButton("—")
+        compact_btn.setFixedSize(18, 18)
+        compact_btn.setToolTip("Compact")
+        compact_btn.clicked.connect(lambda: self.set_view_mode("compact"))
+        compact_btn.setStyleSheet(self._btn_css())
+        title_row.addWidget(compact_btn)
+        self.full_btn = QPushButton("⤢")
+        self.full_btn.setFixedSize(18, 18)
+        self.full_btn.clicked.connect(
+            lambda: self.set_view_mode("expanded" if self._mode == "full" else "full")
+        )
+        self.full_btn.setStyleSheet(self._btn_css())
+        title_row.addWidget(self.full_btn)
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(18, 18)
         close_btn.setToolTip("Hide to tray")
@@ -181,8 +266,10 @@ class OverlayWindow(QWidget):
         rings.setSpacing(10)
         self.ring_session = RingGauge(label="session · 5h", diameter=88)
         self.ring_week = RingGauge(label="week · 7d", diameter=88)
+        rings.addStretch(1)
         rings.addWidget(self.ring_session)
         rings.addWidget(self.ring_week)
+        rings.addStretch(1)
         root.addLayout(rings)
 
         self.reset_label = QLabel("")
@@ -192,6 +279,11 @@ class OverlayWindow(QWidget):
         self.reset_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.reset_label.setStyleSheet(f"color: {theme.TEXT_DIM.name()};")
         root.addWidget(self.reset_label)
+        self.week_reset_label = QLabel("")
+        self.week_reset_label.setFont(rf)
+        self.week_reset_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.week_reset_label.setStyleSheet(f"color: {theme.TEXT_DIM.name()};")
+        root.addWidget(self.week_reset_label)
 
         # readouts grid
         grid = QGridLayout()
@@ -200,11 +292,13 @@ class OverlayWindow(QWidget):
         self.ro_tokens = _Readout("tokens")
         self.ro_cost = _Readout("est. cost")
         self.ro_model = _Readout("model")
+        self.ro_effort = _Readout("effort")
         self.ro_time = _Readout("session")
         grid.addWidget(self.ro_tokens, 0, 0)
         grid.addWidget(self.ro_cost, 0, 1)
         grid.addWidget(self.ro_model, 1, 0)
-        grid.addWidget(self.ro_time, 1, 1)
+        grid.addWidget(self.ro_effort, 1, 1)
+        grid.addWidget(self.ro_time, 2, 0)
         root.addLayout(grid)
 
         self.status_label = QLabel("")
@@ -213,6 +307,34 @@ class OverlayWindow(QWidget):
         self.status_label.setFont(sf)
         self.status_label.setStyleSheet(f"color: {theme.STALE.name()};")
         root.addWidget(self.status_label)
+
+        # Full view only: every Claude Code session running on this machine.
+        self.sessions_panel = QWidget(self.full)
+        sp = QVBoxLayout(self.sessions_panel)
+        sp.setContentsMargins(0, 4, 0, 0)
+        sp.setSpacing(0)
+        rule = QWidget(self.sessions_panel)
+        rule.setFixedHeight(1)
+        rule.setStyleSheet(f"background: {theme.CARD_BORDER.name(QColor.NameFormat.HexArgb)};")
+        sp.addWidget(rule)
+        self.sessions_title = QLabel("")
+        stf = QFont(theme.FONT_FAMILY)
+        stf.setPixelSize(12)
+        stf.setBold(True)
+        self.sessions_title.setFont(stf)
+        self.sessions_title.setStyleSheet(f"color: {theme.TEXT_DIM.name()}; padding-top: 6px;")
+        sp.addWidget(self.sessions_title)
+        self._session_rows: list[_SessionRow] = []
+        self._sessions_layout = QVBoxLayout()
+        self._sessions_layout.setSpacing(0)
+        sp.addLayout(self._sessions_layout)
+        self.sessions_more = QLabel("")
+        mf = QFont(theme.FONT_FAMILY)
+        mf.setPixelSize(10)
+        self.sessions_more.setFont(mf)
+        self.sessions_more.setStyleSheet(f"color: {theme.TEXT_DIM.name()};")
+        sp.addWidget(self.sessions_more)
+        root.addWidget(self.sessions_panel)
 
         self.full.setFixedWidth(theme.CARD_WIDTH)
         self.full.adjustSize()
@@ -240,13 +362,35 @@ class OverlayWindow(QWidget):
             f"QPushButton:hover {{ color: {theme.TEXT.name()}; }}"
         )
 
-    def _apply_collapsed(self, collapsed: bool) -> None:
-        self._collapsed = collapsed
-        self.full.setVisible(not collapsed)
-        self.pill.setVisible(collapsed)
-        self._fit_to(self.pill if collapsed else self.full)
-        self._config.collapsed = collapsed
-        self._config.save()
+    def set_view_mode(self, mode: str) -> None:
+        """Switch between compact (pill), expanded (card) and full (card + all
+        running sessions). Persisted so the overlay reopens the way it was left."""
+        if mode not in VIEW_MODES:
+            return
+        self._mode = mode
+        compact = mode == "compact"
+        full = mode == "full"
+        self.full.setVisible(not compact)
+        self.pill.setVisible(compact)
+        self.sessions_panel.setVisible(full)
+        self.full.setFixedWidth(theme.CARD_WIDTH_FULL if full else theme.CARD_WIDTH)
+        self.full_btn.setText("⤡" if full else "⤢")
+        self.full_btn.setToolTip("Expand (hide sessions)" if full else "Full expand (all sessions)")
+        # Only pay for enumerating sessions while they're on screen.
+        self._service.set_track_live_sessions(full)
+        if full:
+            self._render_sessions(self._service.state)
+        self._fit_to(self.pill if compact else self.full)
+        self._keep_on_screen()
+        if self._config.view_mode != mode:
+            self._config.view_mode = mode
+            self._config.save()
+        self.update()
+
+    def show_full(self) -> None:
+        """Bring the overlay up fully expanded (used when a second launch is made)."""
+        self.show_and_raise()
+        self.set_view_mode("full")
 
     def _fit_to(self, widget: QWidget) -> None:
         """Size the window to exactly wrap the visible child, and the child to fill
@@ -255,6 +399,18 @@ class OverlayWindow(QWidget):
         widget.move(0, 0)
         self.setFixedSize(widget.size())
 
+    def _keep_on_screen(self) -> None:
+        """When a bigger view would hang off the bottom/right of its screen, nudge the
+        window back inside (without saving — the user's chosen spot stays put)."""
+        screen = QApplication.screenAt(self.frameGeometry().topLeft())
+        if screen is None:
+            return
+        g = screen.availableGeometry()
+        x = max(min(self.x(), g.right() - self.width()), g.left())
+        y = max(min(self.y(), g.bottom() - self.height()), g.top())
+        if (x, y) != (self.x(), self.y()):
+            self.move(x, y)
+
     # -- state rendering ----------------------------------------------------
     def update_state(self, state) -> None:
         s = state.session
@@ -262,9 +418,10 @@ class OverlayWindow(QWidget):
             self.ro_tokens.set(fmt_tokens(s.total_tokens))
             self.ro_cost.set(fmt_cost(s.estimated_cost, s.cost_is_complete))
             self.ro_model.set(short_model(s.primary_model))
+            self.ro_effort.set(s.effort or default_effort(s.primary_model) or "—")
             self.ro_time.set(fmt_duration(s.session_duration_seconds))
         else:
-            for ro in (self.ro_tokens, self.ro_cost, self.ro_model, self.ro_time):
+            for ro in (self.ro_tokens, self.ro_cost, self.ro_model, self.ro_effort, self.ro_time):
                 ro.set("—")
 
         limits = state.limits
@@ -272,13 +429,16 @@ class OverlayWindow(QWidget):
             self.ring_session.set_value(limits.session.utilization)
             self.pill_ring.set_value(limits.session.utilization)
             self.pill_label.setText(f"{int(round(limits.session.utilization * 100))}%")
-            self.reset_label.setText(fmt_reset(limits.session.resets_at_epoch))
+            reset = fmt_reset(limits.session.resets_at_epoch)
+            self.reset_label.setText(f"5h {reset}" if reset else "")
         else:
             self.ring_session.set_value(None, center_text="—")
             self.pill_ring.set_value(None, center_text="")
             self.pill_label.setText("—")
         if limits and limits.weekly.utilization is not None:
             self.ring_week.set_value(limits.weekly.utilization)
+            reset = fmt_reset(limits.weekly.resets_at_epoch)
+            self.week_reset_label.setText(f"week {reset}" if reset else "")
         else:
             self.ring_week.set_value(None, center_text="—")
 
@@ -286,8 +446,10 @@ class OverlayWindow(QWidget):
 
         # The pill's width depends on the % label ("9%" vs "100%"); re-fit so the
         # window keeps wrapping it exactly instead of clipping or leaving a gap.
-        if self._collapsed:
+        if self._mode == "compact":
             self._fit_to(self.pill)
+        elif self._mode == "full":
+            self._render_sessions(state)
 
         # First time we notice missing/expired credentials, offer the helper.
         if state.limits_status in ("no_token", "unauthorized"):
@@ -300,6 +462,35 @@ class OverlayWindow(QWidget):
             if getattr(state, "credentials_via_omp", False) and not self._omp_warned:
                 self._omp_warned = True
                 QTimer.singleShot(0, self._warn_omp)
+
+    # Rows shown in the sessions panel before the rest fold into "+N more".
+    MAX_SESSION_ROWS = 8
+
+    def _render_sessions(self, state) -> None:
+        sessions = list(getattr(state, "live_sessions", None) or [])
+        n = len(sessions)
+        self.sessions_title.setText(
+            f"Claude Code sessions · {n} running" if n else "No Claude Code sessions running"
+        )
+        current_id = state.session.session_id if state.session else None
+        shown = sessions[: self.MAX_SESSION_ROWS]
+        while len(self._session_rows) < len(shown):
+            row = _SessionRow(self.sessions_panel)
+            self._sessions_layout.addWidget(row)
+            self._session_rows.append(row)
+        for i, row in enumerate(self._session_rows):
+            if i < len(shown):
+                row.set(shown[i], shown[i].session_id == current_id)
+                row.show()
+            else:
+                row.hide()
+        extra = n - len(shown)
+        self.sessions_more.setText(f"+{extra} more" if extra > 0 else "")
+        self.sessions_more.setVisible(extra > 0)
+        old_height = self.height()
+        self._fit_to(self.full)
+        if self.height() != old_height:
+            self._keep_on_screen()
 
     def _effective_status(self, state) -> str:
         import time
@@ -343,7 +534,7 @@ class OverlayWindow(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         path = QPainterPath()
         rect = self.rect().adjusted(0, 0, -1, -1)
-        radius = theme.CARD_RADIUS if not self._collapsed else theme.PILL_HEIGHT / 2
+        radius = theme.PILL_HEIGHT / 2 if self._mode == "compact" else theme.CARD_RADIUS
         path.addRoundedRect(rect, radius, radius)
         p.fillPath(path, theme.CARD_BG)
         p.strokePath(path, QApplication.palette().window().color().lighter())
@@ -368,7 +559,7 @@ class OverlayWindow(QWidget):
             event.accept()
 
     def mouseDoubleClickEvent(self, event) -> None:
-        self._apply_collapsed(not self._collapsed)
+        self.set_view_mode("expanded" if self._mode == "compact" else "compact")
 
     # -- position persistence + multi-monitor clamp -------------------------
     def _restore_position(self) -> None:
@@ -537,9 +728,15 @@ class OverlayWindow(QWidget):
         act_refresh.triggered.connect(self.refresh_now)
         menu.addAction(act_refresh)
         menu.addSeparator()
-        act_collapse = QAction("Expand" if self._collapsed else "Collapse", self)
-        act_collapse.triggered.connect(lambda: self._apply_collapsed(not self._collapsed))
-        menu.addAction(act_collapse)
+        modes = QActionGroup(menu)
+        for mode, label in (("compact", "Compact"), ("expanded", "Expand"), ("full", "Full expand")):
+            act = QAction(label, self)
+            act.setCheckable(True)
+            act.setChecked(self._mode == mode)
+            act.triggered.connect(lambda _=False, m=mode: self.set_view_mode(m))
+            modes.addAction(act)
+            menu.addAction(act)
+        menu.addSeparator()
         act_reset = QAction("Reset position", self)
         act_reset.triggered.connect(self.reset_position)
         menu.addAction(act_reset)
@@ -602,11 +799,7 @@ class OverlayWindow(QWidget):
 
     @staticmethod
     def _shorten_path(path: str) -> str:
-        """Compact a folder path for a menu label: '…\\parent\\leaf'."""
-        parts = path.replace("/", "\\").rstrip("\\").split("\\")
-        if len(parts) <= 2:
-            return path
-        return "…\\" + "\\".join(parts[-2:])
+        return short_path(path)
 
     def _open_powershell(self, folder) -> None:
         """Open a PowerShell window (PS7 if available) in *folder*, or the app
